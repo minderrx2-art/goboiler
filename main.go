@@ -1,16 +1,55 @@
 package main
 
 import (
+	"embed"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/template"
 )
 
-// SET UP GIT and basic CI/CD with git actions for the generated thing
+//go:embed templates/*.tmpl
+var templateFS embed.FS
 
 func getFlags() string {
 	name := flag.String("n", "myapp", "App name")
 	flag.Parse()
 	return *name
+}
+
+func getTemplateData(name string) map[string]string {
+	return map[string]string{
+		"ProjectName": name,
+	}
+}
+
+func getTemplates(embededFiles embed.FS) []*template.Template {
+	const TEMPLATE_PATH = "templates"
+	fileNames, err := embededFiles.ReadDir(TEMPLATE_PATH)
+
+	if err != nil {
+		fmt.Println("Templates not found")
+	}
+
+	var templates []*template.Template
+
+	for _, file := range fileNames {
+		tmpl, err := template.ParseFS(embededFiles, filepath.Join(TEMPLATE_PATH, file.Name()))
+		if err == nil {
+			templates = append(templates, tmpl)
+		}
+	}
+	return templates
+}
+
+func initiateTemplates(templates []*template.Template, data map[string]string) {
+	for _, template := range templates {
+		fileName := strings.TrimSuffix(template.Name(), ".tmpl")
+		file, _ := os.Create(fileName)
+		template.Execute(file, data)
+	}
 }
 
 func main() {
@@ -24,9 +63,8 @@ func main() {
 	chdir(name)
 	goModInit(name)
 
-	mainBoiler := "package main\n\nimport (\"fmt\")\n\nfunc main(){\n\tfmt.Println(\"Hello world!\")\n}"
-	writeFile("main.go", []byte(mainBoiler))
+	data := getTemplateData(name)
+	fileTemplates := getTemplates(templateFS)
 
-	readMeBoiler := fmt.Sprintf("## {%s}\n### This project was initialised using goboiler CLI tool", name)
-	writeFile("README.md", []byte(readMeBoiler))
+	initiateTemplates(fileTemplates, data)
 }
